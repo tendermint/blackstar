@@ -99,7 +99,7 @@ func (s *upgradeTestSuite) TestDoUpgradeNoDownloadUrl() {
 
 	// do upgrade ignores bad files
 	for _, name := range []string{"missing", "nobin", "noexec"} {
-		info := &cosmovisor.UpgradeInfo{Name: name}
+		info := cosmovisor.UpgradeInfo{Name: name}
 		err = cosmovisor.DoUpgrade(cfg, info)
 		s.Require().Error(err, name)
 		currentBin, err := cfg.CurrentBin()
@@ -110,7 +110,7 @@ func (s *upgradeTestSuite) TestDoUpgradeNoDownloadUrl() {
 	// make sure it updates a few times
 	for _, upgrade := range []string{"chain2", "chain3"} {
 		// now set it to a valid upgrade and make sure CurrentBin is now set properly
-		info := &cosmovisor.UpgradeInfo{Name: upgrade}
+		info := cosmovisor.UpgradeInfo{Name: upgrade}
 		err = cosmovisor.DoUpgrade(cfg, info)
 		s.Require().NoError(err)
 		// we should see current point to the new upgrade dir
@@ -129,30 +129,30 @@ func (s *upgradeTestSuite) TestOsArch() {
 
 func (s *upgradeTestSuite) TestGetDownloadURL() {
 	// all download tests will fail if we are not on linux...
-	ref, err := filepath.Abs(filepath.FromSlash("./testdata/repo/ref_zipped"))
+	ref, err := filepath.Abs(filepath.FromSlash("./testdata/repo/ref_to_chain3-zip_dir.json"))
 	s.Require().NoError(err)
-	badref, err := filepath.Abs(filepath.FromSlash("./testdata/repo/zip_binary/autod.zip"))
+	badref, err := filepath.Abs(filepath.FromSlash("./testdata/repo/chain2-zip_bin/autod.zip")) // "./testdata/repo/zip_binary/autod.zip"))
 	s.Require().NoError(err)
 
 	cases := map[string]struct {
-		info  string
-		url   string
-		isErr bool
+		info string
+		url  string
+		err  string
 	}{
 		"missing": {
-			isErr: true,
+			err: "downloading reference link : invalid source string:",
 		},
 		"follow reference": {
 			info: ref,
-			url:  "https://github.com/cosmos/cosmos-sdk/raw/aa5d6140ad4011bb33d472dca8246a0dcbe223ee/cosmovisor/testdata/repo/zip_directory/autod.zip?checksum=sha256:3784e4574cad69b67e34d4ea4425eff140063a3870270a301d6bb24a098a27ae",
+			url:  "https://github.com/cosmos/cosmos-sdk/raw/robert/cosmvisor-file-watch/cosmovisor/testdata/repo/chain3-zip_dir/autod.zip?checksum=sha256:8951f52a0aea8617de0ae459a20daf704c29d259c425e60d520e363df0f166b4",
 		},
 		"malformated reference target": {
-			info:  badref,
-			isErr: true,
+			info: badref,
+			err:  "upgrade info doesn't contain binary map",
 		},
 		"missing link": {
-			info:  "https://no.such.domain/exists.txt",
-			isErr: true,
+			info: "https://no.such.domain/exists.txt",
+			err:  "dial tcp: lookup no.such.domain: no such host",
 		},
 		"proper binary": {
 			info: `{"binaries": {"linux/amd64": "https://foo.bar/", "windows/amd64": "https://something.else"}}`,
@@ -167,19 +167,22 @@ func (s *upgradeTestSuite) TestGetDownloadURL() {
 			url:  "https://foo.bar/portable",
 		},
 		"missing binary": {
-			info:  `{"binaries": {"linux/arm": "https://foo.bar/"}}`,
-			isErr: true,
+			info: `{"binaries": {"linux/arm": "https://foo.bar/"}}`,
+			err:  "cannot find binary for",
 		},
 	}
 
-	for _, tc := range cases {
-		url, err := cosmovisor.GetDownloadURL(&cosmovisor.UpgradeInfo{Info: tc.info})
-		if tc.isErr {
-			s.Require().Error(err)
-		} else {
-			s.Require().NoError(err)
-			s.Require().Equal(tc.url, url)
-		}
+	for name, tc := range cases {
+		s.Run(name, func() {
+			url, err := cosmovisor.GetDownloadURL(cosmovisor.UpgradeInfo{Info: tc.info})
+			if tc.err != "" {
+				s.Require().Error(err)
+				s.Require().Contains(err.Error(), tc.err)
+			} else {
+				s.Require().NoError(err)
+				s.Require().Equal(tc.url, url)
+			}
+		})
 	}
 }
 
@@ -244,7 +247,7 @@ func (s *upgradeTestSuite) TestDownloadBinary() {
 		}
 
 		upgrade := "amazonas"
-		info := &cosmovisor.UpgradeInfo{
+		info := cosmovisor.UpgradeInfo{
 			Name: upgrade,
 			Info: fmt.Sprintf(`{"binaries":{"%s": "%s"}}`, cosmovisor.OSArch(), url),
 		}
@@ -270,9 +273,7 @@ func (s *upgradeTestSuite) TestDownloadBinary() {
 // returns the directory (which can now be used as Config.Home) and modified safely
 func copyTestData(t *testing.T, subdir string) string {
 	t.Helper()
-
 	tmpdir := t.TempDir()
-
 	require.NoError(t, copy.Copy(filepath.Join("testdata", subdir), tmpdir))
 
 	return tmpdir

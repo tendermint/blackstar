@@ -18,7 +18,7 @@ import (
 // DoUpgrade will be called after the log message has been parsed and the process has terminated.
 // We can now make any changes to the underlying directory without interference and leave it
 // in a state, so we can make a proper restart
-func DoUpgrade(cfg *Config, info *UpgradeInfo) error {
+func DoUpgrade(cfg *Config, info UpgradeInfo) error {
 	// Simplest case is to switch the link
 	err := EnsureBinary(cfg.UpgradeBin(info.Name))
 	if err == nil {
@@ -49,7 +49,7 @@ func DoUpgrade(cfg *Config, info *UpgradeInfo) error {
 }
 
 // DownloadBinary will grab the binary and place it in the proper directory
-func DownloadBinary(cfg *Config, info *UpgradeInfo) error {
+func DownloadBinary(cfg *Config, info UpgradeInfo) error {
 	url, err := GetDownloadURL(info)
 	if err != nil {
 		return err
@@ -102,7 +102,7 @@ type UpgradeConfig struct {
 }
 
 // GetDownloadURL will check if there is an arch-dependent binary specified in Info
-func GetDownloadURL(info *UpgradeInfo) (string, error) {
+func GetDownloadURL(info UpgradeInfo) (string, error) {
 	doc := strings.TrimSpace(info.Info)
 	// if this is a url, then we download that and try to get a new doc with the real info
 	if _, err := url.Parse(doc); err == nil {
@@ -145,33 +145,6 @@ func GetDownloadURL(info *UpgradeInfo) (string, error) {
 
 func OSArch() string {
 	return fmt.Sprintf("%s/%s", runtime.GOOS, runtime.GOARCH)
-}
-
-// SetCurrentUpgrade sets the named upgrade to be the current link, returns error if this binary doesn't exist
-func (cfg *Config) SetCurrentUpgrade(upgradeName string) error {
-	// ensure named upgrade exists
-	bin := cfg.UpgradeBin(upgradeName)
-
-	if err := EnsureBinary(bin); err != nil {
-		return err
-	}
-
-	// set a symbolic link
-	link := filepath.Join(cfg.Root(), currentLink)
-	safeName := url.PathEscape(upgradeName)
-	upgrade := filepath.Join(cfg.Root(), upgradesDir, safeName)
-
-	// remove link if it exists
-	if _, err := os.Stat(link); err == nil {
-		os.Remove(link)
-	}
-
-	// point to the new directory
-	if err := os.Symlink(upgrade, link); err != nil {
-		return fmt.Errorf("creating current symlink: %w", err)
-	}
-
-	return nil
 }
 
 // EnsureBinary ensures the file exists and is executable, or returns an error

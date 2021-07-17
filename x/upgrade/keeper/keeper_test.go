@@ -9,7 +9,6 @@ import (
 	tmproto "github.com/tendermint/tendermint/proto/tendermint/types"
 
 	"github.com/cosmos/cosmos-sdk/simapp"
-	store "github.com/cosmos/cosmos-sdk/store/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/module"
 	"github.com/cosmos/cosmos-sdk/x/upgrade/keeper"
@@ -37,24 +36,6 @@ func (s *KeeperTestSuite) SetupTest() {
 		Time:   time.Now(),
 		Height: 10,
 	})
-}
-
-func (s *KeeperTestSuite) TestReadUpgradeInfoFromDisk() {
-	// require no error when the upgrade info file does not exist
-	_, err := s.app.UpgradeKeeper.ReadUpgradeInfoFromDisk()
-	s.Require().NoError(err)
-
-	expected := store.UpgradeInfo{
-		Name:   "test_upgrade",
-		Height: 100,
-	}
-
-	// create an upgrade info file
-	s.Require().NoError(s.app.UpgradeKeeper.DumpUpgradeInfoToDisk(expected.Height, expected.Name))
-
-	ui, err := s.app.UpgradeKeeper.ReadUpgradeInfoFromDisk()
-	s.Require().NoError(err)
-	s.Require().Equal(expected, ui)
 }
 
 func (s *KeeperTestSuite) TestScheduleUpgrade() {

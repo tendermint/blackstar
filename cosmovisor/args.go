@@ -1,21 +1,26 @@
 package cosmovisor
 
 import (
-	"bufio"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
+	"time"
 )
 
 const (
-	rootName    = "cosmovisor"
-	genesisDir  = "genesis"
-	upgradesDir = "upgrades"
-	currentLink = "current"
+	rootName        = "cosmovisor"
+	genesisDir      = "genesis"
+	upgradesDir     = "upgrades"
+	currentLink     = "current"
+	upgradeFilename = "upgrade_name.txt"
 )
+
+// should be the same as x/upgrade/types.UpgradeInfoFilename
+const defaultFilename = "upgrade-info.json"
 
 // Config is the information passed in to control the daemon
 type Config struct {
@@ -23,7 +28,11 @@ type Config struct {
 	Name                  string
 	AllowDownloadBinaries bool
 	RestartAfterUpgrade   bool
-	LogBufferSize         int
+	UpgradeInfoFilename   string
+	PoolInterval          time.Duration
+
+	// name of the currently running upgrade (based on the upgrade info)
+	upgradeName string
 }
 
 // Root returns the root directory where all info lives
@@ -44,10 +53,18 @@ func (cfg *Config) UpgradeBin(upgradeName string) string {
 // UpgradeDir is the directory named upgrade
 func (cfg *Config) UpgradeDir(upgradeName string) string {
 	safeName := url.PathEscape(upgradeName)
-	return filepath.Join(cfg.Root(), upgradesDir, safeName)
+	return filepath.Join(cfg.Home, rootName, upgradesDir, safeName)
 }
 
-// Symlink to genesis
+// UpgradeInfoFile is the expected upgrade-info filename created by `x/upgrade/keeper`.
+func (cfg *Config) UpgradeInfoFilePath() string {
+	if cfg.UpgradeInfoFilename != "" {
+		return cfg.UpgradeInfoFilename
+	}
+	return filepath.Join(cfg.Home, "data", defaultFilename)
+}
+
+// SymLinkToGenesis creates a "./current" symbolic link from to the genesis directory.
 func (cfg *Config) SymLinkToGenesis() (string, error) {
 	genesis := filepath.Join(cfg.Root(), genesisDir)
 	link := filepath.Join(cfg.Root(), currentLink)
@@ -66,24 +83,25 @@ func (cfg *Config) CurrentBin() (string, error) {
 	// if nothing here, fallback to genesis
 	info, err := os.Lstat(cur)
 	if err != nil {
-		//Create symlink to the genesis
+		// Create symlink to the genesis
 		return cfg.SymLinkToGenesis()
 	}
 	// if it is there, ensure it is a symlink
 	if info.Mode()&os.ModeSymlink == 0 {
-		//Create symlink to the genesis
+		// Create symlink to the genesis
 		return cfg.SymLinkToGenesis()
 	}
 
 	// resolve it
 	dest, err := os.Readlink(cur)
 	if err != nil {
-		//Create symlink to the genesis
+		// Create symlink to the genesis
 		return cfg.SymLinkToGenesis()
 	}
 
 	// and return the binary
-	return filepath.Join(dest, "bin", cfg.Name), nil
+	binpath := filepath.Join(dest, "bin", cfg.Name)
+	return binpath, nil
 }
 
 // GetConfigFromEnv will read the environmental variables into a config
@@ -102,21 +120,22 @@ func GetConfigFromEnv() (*Config, error) {
 		cfg.RestartAfterUpgrade = true
 	}
 
-	logBufferSizeStr := os.Getenv("DAEMON_LOG_BUFFER_SIZE")
-	if logBufferSizeStr != "" {
-		logBufferSize, err := strconv.Atoi(logBufferSizeStr)
+	cfg.UpgradeInfoFilename = os.Getenv("DAEMON_UPDATE_INFO_FILE")
+
+	interval := os.Getenv("DAEMON_POLL_INTERVAL")
+	if interval != "" {
+		i, err := strconv.ParseUint(interval, 10, 32)
 		if err != nil {
 			return nil, err
 		}
-		cfg.LogBufferSize = logBufferSize * 1024
+		cfg.PoolInterval = time.Millisecond * time.Duration(i)
 	} else {
-		cfg.LogBufferSize = bufio.MaxScanTokenSize
+		cfg.PoolInterval = 300 * time.Millisecond
 	}
 
 	if err := cfg.validate(); err != nil {
 		return nil, err
 	}
-
 	return cfg, nil
 }
 
@@ -147,4 +166,62 @@ func (cfg *Config) validate() error {
 	}
 
 	return nil
+}
+
+// SetCurrentUpgrade sets the named upgrade to be the current link, returns error if this binary doesn't exist
+func (cfg *Config) SetCurrentUpgrade(upgradeName string) error {
+	// ensure named upgrade exists
+	bin := cfg.UpgradeBin(upgradeName)
+
+	if err := EnsureBinary(bin); err != nil {
+		return err
+	}
+
+	// set a symbolic link
+	link := filepath.Join(cfg.Root(), currentLink)
+	safeName := url.PathEscape(upgradeName)
+	upgrade := filepath.Join(cfg.Root(), upgradesDir, safeName)
+
+	// remove link if it exists
+	if _, err := os.Stat(link); err == nil {
+		os.Remove(link)
+	}
+
+	// point to the new directory
+	if err := os.Symlink(upgrade, link); err != nil {
+		return fmt.Errorf("creating current symlink: %w", err)
+	}
+
+	cfg.upgradeName = upgradeName
+	f, err := os.Create(filepath.Join(upgrade, upgradeFilename))
+	if err != nil {
+		return err
+	}
+	// go 1.16: return os.WriteFile(filepath.Join(upgrade, upgradeFilename), []byte(upgradeName), 0600)
+	if _, err := f.WriteString(upgradeName); err != nil {
+		return err
+	}
+	return f.Close()
+}
+
+func (cfg *Config) UpgradeName() string {
+	if cfg.upgradeName != "" {
+		return cfg.upgradeName
+	}
+
+	filename := filepath.Join(cfg.Root(), currentLink, upgradeFilename)
+	_, err := os.Lstat(filename)
+	if err != nil { // no current directory
+		cfg.upgradeName = "_"
+		return cfg.upgradeName
+	}
+	// go 1.16: bz, err := os.ReadFile(filename)
+	bz, err := ioutil.ReadFile(filename)
+	if err != nil {
+		fmt.Println("[cosmovisor], error reading", filename, err)
+		cfg.upgradeName = "_"
+		return cfg.upgradeName
+	}
+	cfg.upgradeName = string(bz)
+	return cfg.upgradeName
 }
