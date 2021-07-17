@@ -20,6 +20,7 @@ All arguments passed to the `cosmovisor` program will be passed to the current d
 * `DAEMON_NAME` is the name of the binary itself (e.g. `gaiad`, `regend`, `simd`, etc.).
 * `DAEMON_ALLOW_DOWNLOAD_BINARIES` (*optional*), if set to `true`, will enable auto-downloading of new binaries (for security reasons, this is intended for full nodes rather than validators). By default, `cosmovisor` will not auto-download new binaries.
 * `DAEMON_RESTART_AFTER_UPGRADE` (*optional*), if set to `true`, will restart the subprocess with the same command line arguments and flags (but with the new binary) after a successful upgrade. By default, `cosmovisor` stops running after an upgrade and requires the system administrator to manually restart it. Note that `cosmovisor` will not auto-restart the subprocess if there was an error.
+* `UNSAFE_SKIP_BACKUP` (defaults to `false`), if set to `false`, will backup the data before trying the upgrade. Otherwise it will skip the backup and upgrade. This is useful in case of failures and when needed to rollback. It is advised to use backup option, i.e., `UNSAFE_SKIP_BACKUP=false`
 * `DAEMON_POLL_INTERVAL` is the interval length in milliseconds for polling upgrade plan file. Default: 300.
 * `DAEMON_UPGRADE_INFO_FILE` is a full path to the upgrade plan file created by an app. On start, it checks if the base directory exists. If the file name is wrong the update request will never be handled. Default: `<DAEMON_HOME>/data/upgrade-info.json`.
 

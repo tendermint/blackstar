@@ -33,6 +33,7 @@ type Config struct {
 
 	// name of the currently running upgrade (based on the upgrade info)
 	upgradeName string
+	UnsafeSkipBackup      bool
 }
 
 // Root returns the root directory where all info lives
@@ -131,6 +132,10 @@ func GetConfigFromEnv() (*Config, error) {
 		cfg.PoolInterval = time.Millisecond * time.Duration(i)
 	} else {
 		cfg.PoolInterval = 300 * time.Millisecond
+	}
+
+	if os.Getenv("UNSAFE_SKIP_BACKUP") == "true" {
+		cfg.UnsafeSkipBackup = true
 	}
 
 	if err := cfg.validate(); err != nil {

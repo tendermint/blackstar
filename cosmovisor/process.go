@@ -9,6 +9,9 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
+
+	"github.com/otiai10/copy"
 )
 
 type Launcher struct {
@@ -54,7 +57,31 @@ func (l Launcher) Run(args []string, stdout, stderr io.Writer) (bool, error) {
 		return false, err
 	}
 
+	if err := doBackup(l.cfg); err != nil {
+		return false, err
+	}
+
 	return true, DoUpgrade(l.cfg, l.fw.currentInfo)
+}
+
+func doBackup(cfg *Config) error {
+	// take backup if `UNSAFE_SKIP_BACKUP` is not set.
+	if !cfg.UnsafeSkipBackup {
+		// a destination directory, Format MM-DD-YYYY
+		dt := time.Now()
+		dst := fmt.Sprintf(cfg.Home+"/data"+"-backup-%s", dt.Format("01-22-2000"))
+
+		// copy the $DAEMON_HOME/data to a backup dir
+		err := copy.Copy(cfg.Home+"/data", dst)
+
+		if err != nil {
+			return fmt.Errorf("error while taking data backup: %w", err)
+		}
+
+		fmt.Println("Backup saved at ", dst)
+	}
+
+	return nil
 }
 
 // WaitForUpgradeOrExit checks upgrade plan file created by the app.
